@@ -13,6 +13,11 @@ set -e
 # Display time during script execution
 export DEBIAN_FRONTEND=noninteractive
 
+# Prevent locale package installation or upgrades
+echo 'locales hold' | dpkg --set-selections
+echo 'libc-bin hold' | dpkg --set-selections
+echo 'libc-l10n hold' | dpkg --set-selections
+
 # Define variables
 WORDPRESS_DB_NAME="wordpress"
 WORDPRESS_DB_USER="wpuser"
@@ -25,13 +30,13 @@ echo "${WORDPRESS_DB_PASS}" > /root/.wp_db_pass
 echo "${MARIADB_ROOT_PASS}" > /root/.mariadb_root_password
 chmod 600 /root/.wp_db_pass /root/.mariadb_root_password
 
-# Install dependencies and required packages
+# Install dependencies and required packages minimally
 apt-get update
-apt-get install -y apt-transport-https ca-certificates curl gnupg lsb-release software-properties-common
+apt-get install -y --no-install-recommends apt-transport-https ca-certificates curl gnupg software-properties-common
 
 # Step 1: Install Apache web server and enable required modules
 echo "Installing Apache web server..."
-apt-get install -y apache2
+apt-get install -y --no-install-recommends apache2
 a2enmod ssl
 a2enmod rewrite
 a2enmod headers
@@ -39,7 +44,7 @@ systemctl restart apache2
 
 # Step 2: Install MariaDB with proper initialization
 echo "Installing MariaDB database server..."
-apt-get install -y mariadb-server
+apt-get install -y --no-install-recommends mariadb-server
 
 # Make sure MariaDB is running
 systemctl start mariadb
@@ -51,15 +56,13 @@ mysqladmin -u root password "${MARIADB_ROOT_PASS}" 2>/dev/null || echo "Root pas
 
 # Use root password for further operations with better error handling
 echo "Configuring MariaDB security settings..."
-mysql -u root -p"${MARIADB_ROOT_PASS}" -e "DELETE FROM mysql.global_priv WHERE User='';" 2>/dev/null || true
-mysql -u root -p"${MARIADB_ROOT_PASS}" -e "DELETE FROM mysql.global_priv WHERE User='root' AND Host NOT IN ('localhost', '127.0.0.1', '::1');" 2>/dev/null || true
 mysql -u root -p"${MARIADB_ROOT_PASS}" -e "DROP DATABASE IF EXISTS test;" 2>/dev/null || true
 mysql -u root -p"${MARIADB_ROOT_PASS}" -e "FLUSH PRIVILEGES;" 2>/dev/null || true
 
 # Step 3: Install PHP and required extensions for WordPress
 echo "Installing PHP and extensions..."
-apt-get install -y php php-cli php-fpm php-json php-common php-mysql php-zip php-gd \
-  php-mbstring php-curl php-xml php-pear php-bcmath php-imagick php-intl
+apt-get install -y --no-install-recommends php php-mysql php-zip php-gd \
+  php-mbstring php-curl php-xml
 
 # Step 4: Configure PHP for WordPress
 echo "Configuring PHP for optimal WordPress performance..."
@@ -75,7 +78,7 @@ sed -i 's/max_input_time = .*/max_input_time = 300/' "${PHP_INI}"
 
 # Step 5: Install PHPMyAdmin
 echo "Installing PHPMyAdmin..."
-apt-get install -y phpmyadmin
+apt-get install -y --no-install-recommends phpmyadmin
 # Create symbolic link for PHPMyAdmin
 ln -sf /usr/share/phpmyadmin /var/www/html/phpmyadmin
 
@@ -84,10 +87,7 @@ echo "Creating WordPress database..."
 mysql -u root -p"${MARIADB_ROOT_PASS}" -e "CREATE DATABASE IF NOT EXISTS ${WORDPRESS_DB_NAME} DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;" 2>/dev/null || true
 
 # Create user with simpler syntax that works in older MariaDB versions
-mysql -u root -p"${MARIADB_ROOT_PASS}" -e "CREATE USER IF NOT EXISTS '${WORDPRESS_DB_USER}'@'localhost' IDENTIFIED BY '${WORDPRESS_DB_PASS}';" 2>/dev/null || 
-mysql -u root -p"${MARIADB_ROOT_PASS}" -e "GRANT USAGE ON *.* TO '${WORDPRESS_DB_USER}'@'localhost' IDENTIFIED BY '${WORDPRESS_DB_PASS}';" 2>/dev/null || true
-
-mysql -u root -p"${MARIADB_ROOT_PASS}" -e "GRANT ALL PRIVILEGES ON ${WORDPRESS_DB_NAME}.* TO '${WORDPRESS_DB_USER}'@'localhost';" 2>/dev/null || true
+mysql -u root -p"${MARIADB_ROOT_PASS}" -e "GRANT ALL PRIVILEGES ON ${WORDPRESS_DB_NAME}.* TO '${WORDPRESS_DB_USER}'@'localhost' IDENTIFIED BY '${WORDPRESS_DB_PASS}';" 2>/dev/null || true
 mysql -u root -p"${MARIADB_ROOT_PASS}" -e "FLUSH PRIVILEGES;" 2>/dev/null || true
 
 # Step 7: Download and configure WordPress
