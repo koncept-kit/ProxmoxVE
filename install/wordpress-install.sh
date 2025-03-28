@@ -25,8 +25,16 @@ echo "${WORDPRESS_DB_PASS}" > /root/.wp_db_pass
 echo "${MARIADB_ROOT_PASS}" > /root/.mariadb_root_password
 chmod 600 /root/.wp_db_pass /root/.mariadb_root_password
 
-# Install dependencies and required packages
+# Fix locale settings first
+echo "Fixing locale settings..."
 apt-get update
+apt-get install -y locales
+locale-gen en_US.UTF-8
+update-locale LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8
+export LANG=en_US.UTF-8
+export LC_ALL=en_US.UTF-8
+
+# Install dependencies and required packages
 apt-get install -y apt-transport-https ca-certificates curl gnupg lsb-release software-properties-common
 
 # Step 1: Install Apache web server and enable required modules
@@ -37,20 +45,29 @@ a2enmod rewrite
 a2enmod headers
 systemctl restart apache2
 
-# Step 2: Install MariaDB
+# Step 2: Install MariaDB with proper initialization
 echo "Installing MariaDB database server..."
 apt-get install -y mariadb-server
+
+# Make sure MariaDB is running
 systemctl start mariadb
 systemctl enable mariadb
 
-# Secure MariaDB installation
+# Secure MariaDB installation using a different approach
 echo "Securing MariaDB installation..."
-mysql -e "UPDATE mysql.user SET Password=PASSWORD('${MARIADB_ROOT_PASS}') WHERE User='root';"
-mysql -e "DELETE FROM mysql.user WHERE User='';"
-mysql -e "DELETE FROM mysql.user WHERE User='root' AND Host NOT IN ('localhost', '127.0.0.1', '::1');"
-mysql -e "DROP DATABASE IF EXISTS test;"
-mysql -e "DELETE FROM mysql.db WHERE Db='test' OR Db='test\\_%';"
-mysql -e "FLUSH PRIVILEGES;"
+# First initialize the system tables if needed
+mysql_install_db --user=mysql --skip-test-db > /dev/null 2>&1 || true
+
+# Set root password using a different method
+echo "Setting MariaDB root password..."
+mysqladmin -u root password "${MARIADB_ROOT_PASS}" || mysql -e "ALTER USER 'root'@'localhost' IDENTIFIED BY '${MARIADB_ROOT_PASS}';"
+
+# Use root password for further operations
+mysql -u root -p"${MARIADB_ROOT_PASS}" -e "DELETE FROM mysql.user WHERE User='';"
+mysql -u root -p"${MARIADB_ROOT_PASS}" -e "DELETE FROM mysql.user WHERE User='root' AND Host NOT IN ('localhost', '127.0.0.1', '::1');"
+mysql -u root -p"${MARIADB_ROOT_PASS}" -e "DROP DATABASE IF EXISTS test;"
+mysql -u root -p"${MARIADB_ROOT_PASS}" -e "DELETE FROM mysql.db WHERE Db='test' OR Db='test\\_%';"
+mysql -u root -p"${MARIADB_ROOT_PASS}" -e "FLUSH PRIVILEGES;"
 
 # Step 3: Install PHP and required extensions for WordPress
 echo "Installing PHP and extensions..."
@@ -78,7 +95,8 @@ ln -sf /usr/share/phpmyadmin /var/www/html/phpmyadmin
 # Step 6: Create WordPress database
 echo "Creating WordPress database..."
 mysql -u root -p"${MARIADB_ROOT_PASS}" -e "CREATE DATABASE ${WORDPRESS_DB_NAME} DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
-mysql -u root -p"${MARIADB_ROOT_PASS}" -e "GRANT ALL ON ${WORDPRESS_DB_NAME}.* TO '${WORDPRESS_DB_USER}'@'localhost' IDENTIFIED BY '${WORDPRESS_DB_PASS}';"
+mysql -u root -p"${MARIADB_ROOT_PASS}" -e "CREATE USER '${WORDPRESS_DB_USER}'@'localhost' IDENTIFIED BY '${WORDPRESS_DB_PASS}';"
+mysql -u root -p"${MARIADB_ROOT_PASS}" -e "GRANT ALL ON ${WORDPRESS_DB_NAME}.* TO '${WORDPRESS_DB_USER}'@'localhost';"
 mysql -u root -p"${MARIADB_ROOT_PASS}" -e "FLUSH PRIVILEGES;"
 
 # Step 7: Download and configure WordPress
