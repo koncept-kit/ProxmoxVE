@@ -93,6 +93,11 @@ mysql -u root -p"${MARIADB_ROOT_PASS}" -e "FLUSH PRIVILEGES;" 2>/dev/null || tru
 # Step 7: Download and configure WordPress
 echo "Downloading WordPress..."
 cd /var/www/html
+
+# Remove default Apache index.html file
+rm -f index.html
+
+# Download and extract WordPress
 wget -q https://wordpress.org/latest.tar.gz
 tar -xzf latest.tar.gz
 rm latest.tar.gz
@@ -148,7 +153,15 @@ openssl req -x509 -nodes -days 3650 -newkey rsa:2048 \
 
 # Step 10: Configure Apache VirtualHost for WordPress with SSL
 echo "Configuring Apache for WordPress with SSL..."
-cat > /etc/apache2/sites-available/wordpress-ssl.conf << EOF
+
+# First completely disable the default site
+a2dissite 000-default
+a2dissite default-ssl
+rm -f /etc/apache2/sites-enabled/000-default.conf
+rm -f /etc/apache2/sites-enabled/default-ssl.conf
+
+# Create the WordPress site configuration with high priority 
+cat > /etc/apache2/sites-available/001-wordpress-ssl.conf << EOF
 <VirtualHost *:80>
     ServerAdmin webmaster@localhost
     DocumentRoot /var/www/html
@@ -194,9 +207,19 @@ cat > /etc/apache2/sites-available/wordpress-ssl.conf << EOF
 </VirtualHost>
 EOF
 
-# Enable the WordPress site and SSL
-a2ensite wordpress-ssl
-a2dissite 000-default
+# Explicitly set this as the default site
+ln -sf /etc/apache2/sites-available/001-wordpress-ssl.conf /etc/apache2/sites-enabled/001-wordpress-ssl.conf
+
+# Create a minimal index.html to test if Apache is working at all
+echo "<html><body><h1>Redirecting to WordPress...</h1><script>window.location.href='/';</script></body></html>" > /var/www/html/index.html.bak
+
+# Ensure the main index.php is there and working
+echo "<?php
+// Silence is golden.
+include('./index.php');
+?>" > /var/www/html/index.html
+
+# Restart Apache to apply all settings
 systemctl restart apache2
 
 # Step 11: Create an auto-regenerate SSL script for cloning
